@@ -69,6 +69,19 @@ class prog_args {
             if(file == NULL) {
                 cerr << "ERROR: " << errbuf << endl;
             }
+
+            // set filter
+            struct bpf_program fcode;
+            if (pcap_compile(file, &fcode, "icmp or tcp or udp", 1, 0) != 0)
+            {
+                cerr << "ERROR: unable to compile the packet filter. Check the syntax" << endl;
+                exit(-1);
+            }
+            if (pcap_setfilter(file, &fcode) < 0)
+            {
+                cerr << "ERROR: setting the filter" << endl;
+                exit(-1);
+            }            
         }
 
         void cleanup() {
@@ -89,19 +102,8 @@ class packet {
         u_int16_t src_port;
         u_int16_t dst_port;
 
-        int process_packet(pcap_t *handle) {
-            int end = read_packet(handle);
-            if (end) {
-                return 1;
-            }
-            
-            packet_print();
-            return 0;          
-        }
-
-        // catches packet and gets info for later output
-        int read_packet(pcap_t *handle) {
-            packet = pcap_next(handle, &header);
+        int process_packet(pcap_t *file) {
+            packet = pcap_next(file, &header);
             if (packet == NULL) {
                 return 1;
             }
@@ -155,6 +157,7 @@ class packet {
                     exit(1);
                 }
             }
+            // packet_print();
             return 0;
         }
 
@@ -238,6 +241,23 @@ class packet {
         }
 };
 
+class flow {
+    public:
+        string src_ip;
+        string dst_ip;
+        string src_port;
+        string dst_port;
+        string prot;
+
+        flow(string in_src_ip, string in_dst_ip, string in_src_port, string in_dst_port, string in_prot) {
+            src_ip = in_src_ip;
+            dst_ip = in_dst_ip;
+            src_port = in_src_port;
+            dst_port = in_dst_port;
+            prot = in_prot;
+        }
+};
+
 int main(int argc, char** argv) {
     prog_args prog_args;
     if(argc > 1) {
@@ -246,13 +266,10 @@ int main(int argc, char** argv) {
     prog_args.open_file();
 
     int end;
-    while(1) {
+    do {
         packet packet_to_process;
         end = packet_to_process.process_packet(prog_args.file);
-        if (end) {
-            break;
-        }
-    }
+    } while (!end);
 
     prog_args.cleanup();
     return 0;

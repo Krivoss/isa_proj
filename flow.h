@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <iomanip>
 #include <sstream>
+#include <list>
 
 #include <pcap.h>
 #include <netinet/ether.h>
