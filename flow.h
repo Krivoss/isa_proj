@@ -15,5 +15,6 @@
 #include <netinet/udp.h>
 
 bool time_compare(timeval t1, timeval t2);
+float time_subtract(struct timeval x, struct timeval y);
 
 int main(int argc, char** argv);

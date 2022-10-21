@@ -10,16 +10,16 @@ class prog_args {
         pcap_t* file;
         string netflow_collector;
         int port;
-        int active_t;
-        int inactive_t;
+        float active_t;
+        float inactive_t;
         int flow_cache_size;
 
         prog_args() {
             file_name = "-";
             netflow_collector = "127.0.0.1";
             port = 2055;
-            active_t = 60;
-            inactive_t = 10;
+            active_t = 60.0;
+            inactive_t = 10.0;
             flow_cache_size = 1024;
         }
 
@@ -45,10 +45,10 @@ class prog_args {
                         }                        
                         break;
                     case 'a':
-                        active_t = atoi(optarg);
+                        active_t = atof(optarg);
                         break;
                     case 'i':
-                        inactive_t = atoi(optarg);
+                        inactive_t = atof(optarg);
                         break;
                     case 'm':
                         flow_cache_size = atoi(optarg);
@@ -280,8 +280,8 @@ class exporter {
             flow_sequence_n = 1;
         }
 
-        void process(packet p) {
-            check_for_export();
+        void process(prog_args prog_args, packet p) {
+            check_for_export(prog_args, p);
             int matched_pos;
             if((matched_pos = matches_flow(p)) != -1) {
                 edit_flow(p, matched_pos);
@@ -292,9 +292,24 @@ class exporter {
 
         }
 
-        void check_for_export() {
-            for(const auto& flow : flow_list) {
-                //cout << flow.tos << endl;
+        void check_for_export(prog_args prog_args, packet p) {
+            timeval curr_t = p.time_s;
+            list<flow>::iterator i = flow_list.begin();
+            while(i != flow_list.end()) {
+                flow f = (*i);
+                float active_t = time_subtract(curr_t, f.first_t);
+                float inactive_t = time_subtract(curr_t, f.last_t);
+                if(active_t >= prog_args.active_t) {
+                    cout << "a timeout" << endl;
+                    i = flow_list.erase(i);
+                }
+                else if(inactive_t >= prog_args.inactive_t) {
+                    cout << "ina timeout" << endl;
+                    i = flow_list.erase(i);
+                }
+                else {
+                    i++;
+                }
             }
         }
 
@@ -329,6 +344,20 @@ class exporter {
         }
 };
 
+float time_subtract(struct timeval x, struct timeval y) {
+    struct timeval result;
+    result.tv_sec = x.tv_sec - y.tv_sec;
+
+    if ((result.tv_usec = x.tv_usec - y.tv_usec) < 0)
+    {
+        result.tv_usec += 1000000;
+        result.tv_sec--; // borrow
+    }
+
+    float res = result.tv_sec + (result.tv_usec / 1000000.0);
+    return res;
+}
+
 bool time_compare(timeval t1, timeval t2) {
     if(t1.tv_sec == t2.tv_sec) {
         return t1.tv_usec < t2.tv_usec;
@@ -352,8 +381,8 @@ int main(int argc, char** argv) {
         if(p.process_packet(prog_args.file)) {
             break;
         }
-        exp.process(p);
-    }
+        exp.process(prog_args, p);
+    }    
 
     prog_args.cleanup();
     return 0;
