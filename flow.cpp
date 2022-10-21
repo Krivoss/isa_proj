@@ -1,5 +1,7 @@
 #include "flow.h"
 
+#define PRINT_PACKETS 0
+
 using namespace std;
 
 class prog_args {
@@ -93,7 +95,7 @@ class packet {
     public:
         struct pcap_pkthdr header;
 	    const u_char *packet;
-        string type;
+        string prot;
         string time_s;
         string src_MAC;
         string dst_MAC;
@@ -101,6 +103,8 @@ class packet {
         string dst_ip;
         u_int16_t src_port;
         u_int16_t dst_port;
+        int tos;
+
 
         int process_packet(pcap_t *file) {
             packet = pcap_next(file, &header);
@@ -134,20 +138,26 @@ class packet {
                     struct in_addr addr_dest_bin;                    
                     addr_dest_bin.s_addr = ip_header->daddr;                  
                     dst_ip = inet_ntoa(addr_dest_bin);
+
+                    tos = int(ip_header->tos);
+                                        
                     switch (ip_header->protocol) {
                         case IPPROTO_TCP: { // TCP
                             const struct tcphdr* tcp_header {(struct tcphdr*)(packet + sizeof(struct ethhdr) + ip_header_len)};
                             src_port = ntohs(tcp_header->source);
                             dst_port = ntohs(tcp_header->dest);                            
-                            type = "TCP";
+                            prot = "TCP";
                             break;
                         }
                         case IPPROTO_UDP: { // UDP
                             const struct udphdr* udp_header {(struct udphdr*)(packet + sizeof(struct ethhdr) + ip_header_len)};
                             src_port =  ntohs(udp_header->source);
                             dst_port = ntohs(udp_header->dest);
-                            type = "UDP";
+                            prot = "UDP";
                             break;
+                        }
+                        default: {
+                            prot = "ICMP";
                         }
                     }
                     break;
@@ -157,7 +167,10 @@ class packet {
                     exit(1);
                 }
             }
-            // packet_print();
+            get_timestamp();
+            if (PRINT_PACKETS) {
+                packet_print();
+            }
             return 0;
         }
 
@@ -179,6 +192,7 @@ class packet {
         void get_timestamp() {
             // modified code, take from https://stackoverflow.com/questions/48771851/im-trying-to-build-an-rfc3339-timestamp-in-c-how-do-i-get-the-timezone-offset
             struct tm *p = localtime((const time_t*)&header.ts.tv_sec);
+            time_t t = mktime(p);
             char time[100];
             size_t len = strftime(time, sizeof time - 1, "%FT%T%z", p);
             // move last 2 digits
@@ -192,7 +206,6 @@ class packet {
         
         // outputs packet respresentation
         void packet_print() {
-            get_timestamp();
 
             cout <<  "timestamp: " << time_s << endl;
             cout << "src MAC: " << src_MAC << endl;
@@ -200,11 +213,11 @@ class packet {
             cout << "frame length: " << header.len << " bytes" << endl;
             // TODO
             // IPv6 is adresses are not supported
-            if (type != "IPv6") {
+            if (prot != "IPv6") {
                 cout << "src IP: " << src_ip << endl;
                 cout << "dst IP: " << dst_ip << endl;
             }
-            if(type == "TCP" || type == "UDP") {                
+            if(prot == "TCP" || prot == "UDP") {                
                 cout << "src port: " << src_port << endl;
                 cout << "dst port: " << dst_port << endl << endl;
             }
@@ -245,16 +258,84 @@ class flow {
     public:
         string src_ip;
         string dst_ip;
-        string src_port;
-        string dst_port;
+        u_int16_t src_port;
+        u_int16_t dst_port;
         string prot;
+        string first_t;
+        string last_t;
+        int tos;
 
-        flow(string in_src_ip, string in_dst_ip, string in_src_port, string in_dst_port, string in_prot) {
-            src_ip = in_src_ip;
-            dst_ip = in_dst_ip;
-            src_port = in_src_port;
-            dst_port = in_dst_port;
-            prot = in_prot;
+        int packet_n;
+
+        flow(packet p) {
+            src_ip = p.src_ip;
+            dst_ip = p.dst_ip;
+            src_port = p.src_port;
+            dst_port = p.dst_port;
+            prot = p.prot;
+            tos = p.tos;
+            first_t = p.time_s;
+            last_t = p.time_s;
+            packet_n = 1;
+        }
+};
+
+class exporter {
+    public:
+        list<flow> flow_list;
+        int flow_sequence;
+
+        exporter() {
+            flow_list = list<flow>();
+            flow_sequence = 1;
+        }
+
+        void process(packet p) {
+            check_for_export();
+            int matched_pos;
+            if((matched_pos = matches_flow(p)) != -1) {
+                edit_flow(p, matched_pos);
+            }
+            else {
+                add_flow(p);
+            }
+
+        }
+
+        void check_for_export() {
+            for(const auto& flow : flow_list) {
+                //cout << flow.tos << endl;
+            }
+        }
+
+        int matches_flow(packet p) {
+            int i = 0;
+            for(const auto& f : flow_list) {
+                bool same_src_ip = p.src_ip == f.src_ip;
+                bool same_dst_ip = p.dst_ip == f.dst_ip;
+                bool same_src_port = p.src_port == f.src_port;
+                bool same_dst_port = p.dst_port == f.dst_port;
+                bool same_prot = p.prot == f.prot;
+                bool same_tos = p.tos == f.tos;
+                if(same_src_ip && same_dst_ip && same_src_port && same_dst_port && same_prot && same_tos) {
+                    return i; // return index
+                }
+                i++;
+            }
+            return -1;
+        }
+
+        void edit_flow(packet p, int pos) {
+            list<flow>::iterator it = flow_list.begin();
+            advance(it, pos);
+            it->packet_n++;
+            it->last_t = p.time_s;
+            // flow_list.sort([](flow* lhs, flow* rhs){return lhs->first_t >});
+        }
+
+        void add_flow(packet p) {
+            flow f(p);
+            flow_list.push_back(f);
         }
 };
 
@@ -265,11 +346,15 @@ int main(int argc, char** argv) {
     }
     prog_args.open_file();
 
-    int end;
-    do {
-        packet packet_to_process;
-        end = packet_to_process.process_packet(prog_args.file);
-    } while (!end);
+    exporter exp;
+
+    while(1) {
+        packet p;
+        if(p.process_packet(prog_args.file)) {
+            break;
+        }
+        exp.process(p);
+    }
 
     prog_args.cleanup();
     return 0;
