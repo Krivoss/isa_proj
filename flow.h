@@ -5,10 +5,15 @@
 #include <sstream>
 #include <list>
 
+#include <ctime>
+
+#include <time.h>
 #include <pcap.h>
 #include <netinet/ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+
+bool time_compare(timeval t1, timeval t2);
 
 int main(int argc, char** argv);

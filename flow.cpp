@@ -96,7 +96,7 @@ class packet {
         struct pcap_pkthdr header;
 	    const u_char *packet;
         string prot;
-        string time_s;
+        timeval time_s;
         string src_MAC;
         string dst_MAC;
         string src_ip;
@@ -157,6 +157,7 @@ class packet {
                             break;
                         }
                         default: {
+                            // TODO port = icmp_header->icmp_type * 256 + icmp_header->icmp_code;
                             prot = "ICMP";
                         }
                     }
@@ -191,23 +192,13 @@ class packet {
 
         void get_timestamp() {
             // modified code, take from https://stackoverflow.com/questions/48771851/im-trying-to-build-an-rfc3339-timestamp-in-c-how-do-i-get-the-timezone-offset
-            struct tm *p = localtime((const time_t*)&header.ts.tv_sec);
-            time_t t = mktime(p);
-            char time[100];
-            size_t len = strftime(time, sizeof time - 1, "%FT%T%z", p);
-            // move last 2 digits
-            if(len >= 0) {
-                char minute[] = { time[len-2], time[len-1], '\0' };
-                sprintf(time + len - 2, ":%s", minute);
-            }
-            // end of taken code
-            time_s = time;
+            time_s = header.ts;
         }
         
         // outputs packet respresentation
         void packet_print() {
 
-            cout <<  "timestamp: " << time_s << endl;
+            // cout <<  "timestamp: " << time_s << endl;
             cout << "src MAC: " << src_MAC << endl;
             cout << "dst MAC: " << dst_MAC << endl;
             cout << "frame length: " << header.len << " bytes" << endl;
@@ -261,10 +252,9 @@ class flow {
         u_int16_t src_port;
         u_int16_t dst_port;
         string prot;
-        string first_t;
-        string last_t;
+        timeval first_t;
+        timeval last_t;
         int tos;
-
         int packet_n;
 
         flow(packet p) {
@@ -283,11 +273,11 @@ class flow {
 class exporter {
     public:
         list<flow> flow_list;
-        int flow_sequence;
+        int flow_sequence_n;
 
         exporter() {
             flow_list = list<flow>();
-            flow_sequence = 1;
+            flow_sequence_n = 1;
         }
 
         void process(packet p) {
@@ -330,7 +320,7 @@ class exporter {
             advance(it, pos);
             it->packet_n++;
             it->last_t = p.time_s;
-            // flow_list.sort([](flow* lhs, flow* rhs){return lhs->first_t >});
+            // flow_list.sort([](flow lhs, flow rhs) {return time_compare(lhs.first_t, rhs.first_t);});
         }
 
         void add_flow(packet p) {
@@ -338,6 +328,15 @@ class exporter {
             flow_list.push_back(f);
         }
 };
+
+bool time_compare(timeval t1, timeval t2) {
+    if(t1.tv_sec == t2.tv_sec) {
+        return t1.tv_usec < t2.tv_usec;
+    }
+    else {
+        return t1.tv_sec < t2.tv_sec;
+    }
+}
 
 int main(int argc, char** argv) {
     prog_args prog_args;
