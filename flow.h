@@ -14,7 +14,8 @@
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 
+void export_flow(flow f);
 bool time_compare(timeval t1, timeval t2);
-float time_subtract(struct timeval x, struct timeval y);
+float time_subtract(timeval x, timeval y);
 
 int main(int argc, char** argv);

@@ -104,7 +104,7 @@ class packet {
         u_int16_t src_port;
         u_int16_t dst_port;
         int tos;
-
+        u_char tcp_flag;
 
         int process_packet(pcap_t *file) {
             packet = pcap_next(file, &header);
@@ -147,6 +147,7 @@ class packet {
                             src_port = ntohs(tcp_header->source);
                             dst_port = ntohs(tcp_header->dest);                            
                             prot = "TCP";
+                            tcp_flag = tcp_header->th_flags;
                             break;
                         }
                         case IPPROTO_UDP: { // UDP
@@ -256,6 +257,7 @@ class flow {
         timeval last_t;
         int tos;
         int packet_n;
+        u_char tcp_flags;
 
         flow(packet p) {
             src_ip = p.src_ip;
@@ -267,6 +269,12 @@ class flow {
             first_t = p.time_s;
             last_t = p.time_s;
             packet_n = 1;
+            if(p.prot == "TCP") {
+                tcp_flags = p.tcp_flag;
+            }
+            else {
+                tcp_flags = 0;
+            }
         }
 };
 
@@ -300,11 +308,12 @@ class exporter {
                 float active_t = time_subtract(curr_t, f.first_t);
                 float inactive_t = time_subtract(curr_t, f.last_t);
                 if(active_t >= prog_args.active_t) {
-                    cout << "a timeout" << endl;
+                    // TODO export it
+                    export_flow(f);
                     i = flow_list.erase(i);
                 }
                 else if(inactive_t >= prog_args.inactive_t) {
-                    cout << "ina timeout" << endl;
+                    // TODO export it
                     i = flow_list.erase(i);
                 }
                 else {
@@ -335,6 +344,9 @@ class exporter {
             advance(it, pos);
             it->packet_n++;
             it->last_t = p.time_s;
+            if(p.prot == "TCP") {
+                it->tcp_flags |= p.tcp_flag;
+            }
             // flow_list.sort([](flow lhs, flow rhs) {return time_compare(lhs.first_t, rhs.first_t);});
         }
 
@@ -344,7 +356,11 @@ class exporter {
         }
 };
 
-float time_subtract(struct timeval x, struct timeval y) {
+void export_flow(flow f) {
+
+}
+
+float time_subtract(timeval x, timeval y) {
     struct timeval result;
     result.tv_sec = x.tv_sec - y.tv_sec;
 
