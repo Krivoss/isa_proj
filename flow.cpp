@@ -8,7 +8,7 @@ class prog_args {
     public:
         string file_name;
         pcap_t* file;
-        string netflow_collector;
+        hostent* netflow_collector;
         int port;
         float active_t;
         float inactive_t;
@@ -16,7 +16,7 @@ class prog_args {
 
         prog_args() {
             file_name = "-";
-            netflow_collector = "127.0.0.1";
+            netflow_collector = gethostbyname("127.0.0.1");
             port = 2055;
             active_t = 60.0;
             inactive_t = 10.0;
@@ -36,10 +36,11 @@ class prog_args {
                         // TODO get host by name
                         arg_s.assign(optarg);
                         if(arg_s.find(":") == string::npos) {
-                            netflow_collector = arg_s;
+                            netflow_collector = gethostbyname(arg_s.c_str());
                         }
                         else {
-                            netflow_collector = arg_s.substr(0, arg_s.find(":"));                            
+                            string host = arg_s.substr(0, arg_s.find(":"));
+                            netflow_collector = gethostbyname(host.c_str());                            
                             string port_s = (arg_s.substr(arg_s.find(":") + 1, arg_s.length()));
                             port = stoi(port_s);
                         }                        
@@ -282,10 +283,12 @@ class exporter {
     public:
         list<flow> flow_list;
         int flow_sequence_n;
+        int sock;
 
         exporter() {
             flow_list = list<flow>();
             flow_sequence_n = 1;
+            sock = 0;
         }
 
         void process(prog_args prog_args, packet p) {
@@ -300,19 +303,19 @@ class exporter {
 
         }
 
-        void check_for_export(prog_args prog_args, packet p) {
+        void check_for_export(prog_args p_args, packet p) {
             timeval curr_t = p.time_s;
             list<flow>::iterator i = flow_list.begin();
             while(i != flow_list.end()) {
                 flow f = (*i);
                 float active_t = time_subtract(curr_t, f.first_t);
                 float inactive_t = time_subtract(curr_t, f.last_t);
-                if(active_t >= prog_args.active_t) {
+                if(active_t >= p_args.active_t) {
                     // TODO export it
-                    export_flow(f);
+                    export_flow(p_args, f);
                     i = flow_list.erase(i);
                 }
-                else if(inactive_t >= prog_args.inactive_t) {
+                else if(inactive_t >= p_args.inactive_t) {
                     // TODO export it
                     i = flow_list.erase(i);
                 }
@@ -354,20 +357,51 @@ class exporter {
             flow f(p);
             flow_list.push_back(f);
         }
+
+        void export_flow(prog_args p_args, flow f) {
+            if(sock == 0) {
+                open_client_sock(p_args);
+            }
+            
+        }
+
+        void open_client_sock(prog_args p_args) {
+            int s;                        // socket descriptor
+            struct sockaddr_in server;       // address structures of the server and the client
+            struct hostent *servent;         // network host entry required by gethostbyname()
+            
+            memset(&server,0,sizeof(server)); // erase the server structure
+            server.sin_family = AF_INET;                   
+
+            if ((servent = p_args.netflow_collector) == NULL) // check the first parameter
+                errx(1,"gethostbyname() failed\n");
+
+            // copy the first parameter to the server.sin_addr structure
+            memcpy(&server.sin_addr,servent->h_addr,servent->h_length); 
+
+            server.sin_port = htons(p_args.port);        // server port (network byte order)
+            
+            if ((s = socket(AF_INET , SOCK_DGRAM , 0)) == -1)   //create a client socket
+                err(1,"socket() failed\n");
+            
+            printf("* Server socket created\n");
+
+            printf("* Creating a connected UDP socket using connect()\n");                
+            // create a connected UDP socket
+            if (connect(s, (struct sockaddr *)&server, sizeof(server))  == -1)
+                err(1, "connect() failed");
+
+            sock = s;
+        }
 };
-
-void export_flow(flow f) {
-
-}
 
 float time_subtract(timeval x, timeval y) {
     struct timeval result;
     result.tv_sec = x.tv_sec - y.tv_sec;
 
-    if ((result.tv_usec = x.tv_usec - y.tv_usec) < 0)
-    {
+    if ((result.tv_usec = x.tv_usec - y.tv_usec) < 0) {
         result.tv_usec += 1000000;
-        result.tv_sec--; // borrow
+        result.tv_sec--;
     }
 
     float res = result.tv_sec + (result.tv_usec / 1000000.0);
@@ -384,22 +418,22 @@ bool time_compare(timeval t1, timeval t2) {
 }
 
 int main(int argc, char** argv) {
-    prog_args prog_args;
+    prog_args p_args;
     if(argc > 1) {
-        prog_args.process_args(argc, argv);
+        p_args.process_args(argc, argv);
     }
-    prog_args.open_file();
+    p_args.open_file();
 
     exporter exp;
 
     while(1) {
         packet p;
-        if(p.process_packet(prog_args.file)) {
+        if(p.process_packet(p_args.file)) {
             break;
         }
-        exp.process(prog_args, p);
+        exp.process(p_args, p);
     }    
 
-    prog_args.cleanup();
+    p_args.cleanup();
     return 0;
 }
