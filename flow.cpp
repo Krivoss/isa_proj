@@ -159,7 +159,9 @@ class packet {
                             break;
                         }
                         default: {
-                            // TODO port = icmp_header->icmp_type * 256 + icmp_header->icmp_code;
+                            const struct icmphdr* icmp_header {(struct icmphdr*)(packet + sizeof(struct ethhdr) + ip_header_len)};
+                            src_port = icmp_header->type * 256 + icmp_header->code;
+                            dst_port = src_port;
                             prot = "ICMP";
                         }
                     }
@@ -256,6 +258,7 @@ class flow {
         string prot;
         timeval first_t;
         timeval last_t;
+        timeval curr_t;
         int tos;
         int packet_n;
         u_char tcp_flags;
@@ -310,13 +313,10 @@ class exporter {
                 flow f = (*i);
                 float active_t = time_subtract(curr_t, f.first_t);
                 float inactive_t = time_subtract(curr_t, f.last_t);
-                if(active_t >= p_args.active_t) {
+                if((active_t >= p_args.active_t) || (inactive_t >= p_args.inactive_t)) {
                     // TODO export it
+                    f.curr_t = curr_t;
                     export_flow(p_args, f);
-                    i = flow_list.erase(i);
-                }
-                else if(inactive_t >= p_args.inactive_t) {
-                    // TODO export it
                     i = flow_list.erase(i);
                 }
                 else {
@@ -335,7 +335,7 @@ class exporter {
                 bool same_prot = p.prot == f.prot;
                 bool same_tos = p.tos == f.tos;
                 if(same_src_ip && same_dst_ip && same_src_port && same_dst_port && same_prot && same_tos) {
-                    return i; // return index
+                    return i;
                 }
                 i++;
             }
@@ -366,6 +366,8 @@ class exporter {
         }
 
         void open_client_sock(prog_args p_args) {
+            // modified code taken from echo-udp-client2.c by Petr Matousek
+            // https://moodle.vut.cz/pluginfile.php/502893/mod_folder/content/0/udp/echo-udp-client2.c?forcedownload=1
             int s;                        // socket descriptor
             struct sockaddr_in server;       // address structures of the server and the client
             struct hostent *servent;         // network host entry required by gethostbyname()
@@ -383,10 +385,7 @@ class exporter {
             
             if ((s = socket(AF_INET , SOCK_DGRAM , 0)) == -1)   //create a client socket
                 err(1,"socket() failed\n");
-            
-            printf("* Server socket created\n");
 
-            printf("* Creating a connected UDP socket using connect()\n");                
             // create a connected UDP socket
             if (connect(s, (struct sockaddr *)&server, sizeof(server))  == -1)
                 err(1, "connect() failed");
