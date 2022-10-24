@@ -1,6 +1,6 @@
 #include "flow.h"
 
-#define PRINT_PACKETS 0
+#define DEBUG_PRINT_PACKETS 0
 
 using namespace std;
 
@@ -59,7 +59,7 @@ class prog_args {
                         exit(0);
                         break;
                     default:
-                        cout << "Unknown parse returns: " << c << endl;
+                        cerr << "Unknown parse returns: " << c << endl;
                         exit(1);
                         break; 
                 } 
@@ -160,7 +160,7 @@ class packet {
                         }
                         default: {
                             const struct icmphdr* icmp_header {(struct icmphdr*)(packet + sizeof(struct ethhdr) + ip_header_len)};
-                            src_port = icmp_header->type * 256 + icmp_header->code;
+                            src_port = ntohs(icmp_header->type * 256 + icmp_header->code);
                             dst_port = src_port;
                             prot = "ICMP";
                         }
@@ -168,12 +168,12 @@ class packet {
                     break;
                 }
                 default: {
-                    cout << "GOT NON LINKTYPE_ETHERNET PACKET" << endl;
+                    cerr << "GOT INVALID PACKET" << endl;
                     exit(1);
                 }
             }
             get_timestamp();
-            if (PRINT_PACKETS) {
+            if (DEBUG_PRINT_PACKETS) {
                 packet_print();
             }
             return 0;
@@ -290,7 +290,7 @@ class exporter {
 
         exporter() {
             flow_list = list<flow>();
-            flow_sequence_n = 1;
+            flow_sequence_n = 0;
             sock = 0;
         }
 
@@ -316,7 +316,7 @@ class exporter {
                 if((active_t >= p_args.active_t) || (inactive_t >= p_args.inactive_t)) {
                     // TODO export it
                     f.curr_t = curr_t;
-                    export_flow(p_args, f);
+                    export_flow(p_args, f, p);
                     i = flow_list.erase(i);
                 }
                 else {
@@ -354,14 +354,21 @@ class exporter {
         }
 
         void add_flow(packet p) {
+            // TODO overflow
             flow f(p);
             flow_list.push_back(f);
         }
 
-        void export_flow(prog_args p_args, flow f) {
+        void export_flow(prog_args p_args, flow f, packet p) {
             if(sock == 0) {
                 open_client_sock(p_args);
             }
+            packet_data p_data = {};
+            p_data.version = 5;
+            p_data.count = 1;
+            p_data.SysUptime = ((uint32_t) p.time_s.tv_sec * 1000 + (uint32_t) p.time_s.tv_usec / 1000);
+
+            send(sock, &p_data, sizeof(p_data), 0);
             
         }
 
@@ -394,6 +401,7 @@ class exporter {
         }
 };
 
+// return the time differance between the two times
 float time_subtract(timeval x, timeval y) {
     struct timeval result;
     result.tv_sec = x.tv_sec - y.tv_sec;
@@ -407,6 +415,7 @@ float time_subtract(timeval x, timeval y) {
     return res;
 }
 
+// return true if first time was earlier that the second one
 bool time_compare(timeval t1, timeval t2) {
     if(t1.tv_sec == t2.tv_sec) {
         return t1.tv_usec < t2.tv_usec;
@@ -431,7 +440,7 @@ int main(int argc, char** argv) {
             break;
         }
         exp.process(p_args, p);
-    }    
+    }
 
     p_args.cleanup();
     return 0;
