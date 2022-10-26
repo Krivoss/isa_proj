@@ -4,6 +4,7 @@
 #include <list>
 
 #include <ctime>
+#include <cassert>
 
 #include <string.h>
 #include <stdio.h> 
@@ -52,7 +53,8 @@ struct packet_data {
     uint16_t pad2;
 };
 
-bool time_compare(timeval t1, timeval t2);
+uint32_t timeval_to_sysuptime(timeval t);
 float time_subtract(timeval x, timeval y);
+bool time_compare(timeval t1, timeval t2);
 
 int main(int argc, char** argv);

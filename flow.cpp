@@ -105,6 +105,7 @@ class packet {
         u_int16_t src_port;
         u_int16_t dst_port;
         int tos;
+        uint32_t ihl; 
         u_char tcp_flag;
 
         int process_packet(pcap_t *file) {
@@ -141,6 +142,7 @@ class packet {
                     dst_ip = inet_ntoa(addr_dest_bin);
 
                     tos = int(ip_header->tos);
+                    ihl = ip_header->ihl;
                                         
                     switch (ip_header->protocol) {
                         case IPPROTO_TCP: { // TCP
@@ -255,6 +257,7 @@ class flow {
         string dst_ip;
         u_int16_t src_port;
         u_int16_t dst_port;
+        u_int32_t dOctets;
         string prot;
         timeval first_t;
         timeval last_t;
@@ -268,6 +271,7 @@ class flow {
             dst_ip = p.dst_ip;
             src_port = p.src_port;
             dst_port = p.dst_port;
+            dOctets = p.ihl;
             prot = p.prot;
             tos = p.tos;
             first_t = p.time_s;
@@ -297,7 +301,7 @@ class exporter {
         void process(prog_args prog_args, packet p) {
             check_for_export(prog_args, p);
             int matched_pos;
-            if((matched_pos = matches_flow(p)) != -1) {
+            if((matched_pos = match_flow(p)) != -1) {
                 edit_flow(p, matched_pos);
             }
             else {
@@ -325,7 +329,7 @@ class exporter {
             }
         }
 
-        int matches_flow(packet p) {
+        int match_flow(packet p) {
             int i = 0;
             for(const auto& f : flow_list) {
                 bool same_src_ip = p.src_ip == f.src_ip;
@@ -347,6 +351,7 @@ class exporter {
             advance(it, pos);
             it->packet_n++;
             it->last_t = p.time_s;
+            it->dOctets += p.ihl;
             if(p.prot == "TCP") {
                 it->tcp_flags |= p.tcp_flag;
             }
@@ -366,7 +371,36 @@ class exporter {
             packet_data p_data = {};
             p_data.version = 5;
             p_data.count = 1;
-            p_data.SysUptime = ((uint32_t) p.time_s.tv_sec * 1000 + (uint32_t) p.time_s.tv_usec / 1000);
+            p_data.SysUptime = ((uint32_t) p.time_s.tv_sec * 1000 + (uint32_t) p.time_s.tv_usec / 1000)
+                             - timeval_to_sysuptime(f.last_t);
+            p_data.unix_secs = (uint32_t) p.time_s.tv_sec;
+            p_data.unix_nsecs = (uint32_t) p.time_s.tv_usec / 1000;
+            p_data.flow_sequence = flow_sequence_n++;
+            
+            // TODO check values
+            p_data.engine_type = 0;
+            p_data.engine_id = 0;
+            p_data.sampling_interval = 0;
+
+            p_data.srcaddr = inet_addr(f.src_ip.c_str());
+            p_data.dstaddr = inet_addr(f.dst_ip.c_str());
+            p_data.nexthop = 0;
+            p_data.input = 0;
+            p_data.output = 0;
+            p_data.dPkts = f.packet_n;
+            p_data.dOctets = f.dOctets;
+            p_data.First = timeval_to_sysuptime(f.first_t);
+            p_data.Last = timeval_to_sysuptime(f.last_t);
+            p_data.srcport = f.src_port;
+            p_data.dstport = f.dst_port;
+            p_data.pad1 = 0;
+            p_data.tcp_flags = f.tcp_flags;
+            p_data.src_as = 0;
+            p_data.dst_as = 0;
+            p_data.src_mask = 0;
+            p_data.dst_mask = 0;
+            p_data.pad2 = 0;
+
 
             send(sock, &p_data, sizeof(p_data), 0);
             
@@ -400,6 +434,10 @@ class exporter {
             sock = s;
         }
 };
+
+uint32_t timeval_to_sysuptime(timeval t) {
+    return ((uint32_t) t.tv_sec * 1000 + (uint32_t) t.tv_usec / 1000);
+}
 
 // return the time differance between the two times
 float time_subtract(timeval x, timeval y) {
