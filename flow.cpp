@@ -33,7 +33,7 @@ class prog_args {
                         file_name = optarg;
                         break;
                     case 'c':
-                        // TODO get host by name
+                        // TODO test gethostbyname
                         arg_s.assign(optarg);
                         if(arg_s.find(":") == string::npos) {
                             netflow_collector = gethostbyname(arg_s.c_str());
@@ -208,8 +208,6 @@ class packet {
             cout << "src MAC: " << src_MAC << endl;
             cout << "dst MAC: " << dst_MAC << endl;
             cout << "frame length: " << header.len << " bytes" << endl;
-            // TODO
-            // IPv6 is adresses are not supported
             if (prot != "IPv6") {
                 cout << "src IP: " << src_ip << endl;
                 cout << "dst IP: " << dst_ip << endl;
@@ -318,7 +316,6 @@ class exporter {
                 float active_t = time_subtract(curr_t, f.first_t);
                 float inactive_t = time_subtract(curr_t, f.last_t);
                 if((active_t >= p_args.active_t) || (inactive_t >= p_args.inactive_t)) {
-                    // TODO export it
                     f.curr_t = curr_t;
                     export_flow(p_args, f, p);
                     i = flow_list.erase(i);
