@@ -10,6 +10,9 @@ PORT=12345
 
 all: flow
 
+test: flow
+	nfcapd -T all -l ./testing/ -I any -p 8088 & nfdump -r ./testing/vysledny.soubor
+
 run: flow
 	./flow
 

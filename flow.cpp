@@ -142,7 +142,7 @@ class packet {
                     dst_ip = inet_ntoa(addr_dest_bin);
 
                     tos = int(ip_header->tos);
-                    ihl = ip_header->ihl;
+                    ihl = ntohs(ip_header->tot_len);
                                         
                     switch (ip_header->protocol) {
                         case IPPROTO_TCP: { // TCP
@@ -155,15 +155,14 @@ class packet {
                         }
                         case IPPROTO_UDP: { // UDP
                             const struct udphdr* udp_header {(struct udphdr*)(packet + sizeof(struct ethhdr) + ip_header_len)};
-                            src_port =  ntohs(udp_header->source);
+                            src_port = ntohs(udp_header->source);
                             dst_port = ntohs(udp_header->dest);
                             prot = "UDP";
                             break;
                         }
-                        default: {
-                            const struct icmphdr* icmp_header {(struct icmphdr*)(packet + sizeof(struct ethhdr) + ip_header_len)};
-                            src_port = ntohs(icmp_header->type * 256 + icmp_header->code);
-                            dst_port = src_port;
+                        default: { // ICMP
+                            src_port = 0;
+                            dst_port = 0;
                             prot = "ICMP";
                         }
                     }
@@ -174,7 +173,7 @@ class packet {
                     exit(1);
                 }
             }
-            get_timestamp();
+            time_s = header.ts;
             if (DEBUG_PRINT_PACKETS) {
                 packet_print();
             }
@@ -194,11 +193,6 @@ class packet {
                 }
             }
             return printable;
-        }
-
-        void get_timestamp() {
-            // modified code, take from https://stackoverflow.com/questions/48771851/im-trying-to-build-an-rfc3339-timestamp-in-c-how-do-i-get-the-timezone-offset
-            time_s = header.ts;
         }
         
         // outputs packet respresentation
@@ -289,6 +283,7 @@ class exporter {
         list<flow> flow_list;
         int flow_sequence_n;
         int sock;
+        timeval boot;
 
         exporter() {
             flow_list = list<flow>();
@@ -313,8 +308,8 @@ class exporter {
             list<flow>::iterator i = flow_list.begin();
             while(i != flow_list.end()) {
                 flow f = (*i);
-                float active_t = time_subtract(curr_t, f.first_t);
-                float inactive_t = time_subtract(curr_t, f.last_t);
+                double active_t = time_subtract(curr_t, f.first_t);
+                double inactive_t = time_subtract(curr_t, f.last_t);
                 if((active_t >= p_args.active_t) || (inactive_t >= p_args.inactive_t)) {
                     f.curr_t = curr_t;
                     export_flow(p_args, f, p);
@@ -357,6 +352,9 @@ class exporter {
 
         void add_flow(packet p) {
             // TODO overflow
+            if(flow_list.size() == 0 && flow_sequence_n == 0) {
+                boot = p.time_s;
+            }
             flow f(p);
             flow_list.push_back(f);
         }
@@ -366,37 +364,44 @@ class exporter {
                 open_client_sock(p_args);
             }
             packet_data p_data = {};
-            p_data.version = 5;
-            p_data.count = 1;
-            p_data.SysUptime = ((uint32_t) p.time_s.tv_sec * 1000 + (uint32_t) p.time_s.tv_usec / 1000)
-                             - timeval_to_sysuptime(f.last_t);
-            p_data.unix_secs = (uint32_t) p.time_s.tv_sec;
-            p_data.unix_nsecs = (uint32_t) p.time_s.tv_usec / 1000;
-            p_data.flow_sequence = flow_sequence_n++;
-            
-            // TODO check values
+            p_data.version = htons(5);
+            p_data.count = htons(1);
+            p_data.SysUptime = htonl(calc_sysuptime(boot, p.time_s));
+            p_data.unix_secs = htonl((uint32_t) p.time_s.tv_sec);
+            p_data.unix_nsecs = htonl((uint32_t) p.time_s.tv_usec * 1000);
+            p_data.flow_sequence = htonl(flow_sequence_n++);
             p_data.engine_type = 0;
             p_data.engine_id = 0;
-            p_data.sampling_interval = 0;
+            p_data.sampling_interval = htons(0);
 
             p_data.srcaddr = inet_addr(f.src_ip.c_str());
             p_data.dstaddr = inet_addr(f.dst_ip.c_str());
-            p_data.nexthop = 0;
-            p_data.input = 0;
-            p_data.output = 0;
-            p_data.dPkts = f.packet_n;
-            p_data.dOctets = f.dOctets;
-            p_data.First = timeval_to_sysuptime(f.first_t);
-            p_data.Last = timeval_to_sysuptime(f.last_t);
-            p_data.srcport = f.src_port;
-            p_data.dstport = f.dst_port;
+            p_data.nexthop = htonl(0);
+            p_data.input = htons(0);
+            p_data.output = htons(0);
+            p_data.dPkts = htonl(f.packet_n);
+            p_data.dOctets = htonl(f.dOctets);
+            p_data.First = htonl(calc_sysuptime(boot, f.first_t));
+            p_data.Last = htonl(calc_sysuptime(boot, f.last_t));
+            p_data.srcport = htons(f.src_port);
+            p_data.dstport = htons(f.dst_port);
             p_data.pad1 = 0;
+            if(f.prot == "TCP") {
+                p_data.prot = 6;
+            }
+            else if(f.prot == "UDP") {
+                p_data.prot = 17;
+            }
+            else if(f.prot == "ICMP") {
+                p_data.prot = 1;
+            }
+            p_data.tos = f.tos;            
             p_data.tcp_flags = f.tcp_flags;
-            p_data.src_as = 0;
-            p_data.dst_as = 0;
+            p_data.src_as = htons(0);
+            p_data.dst_as = htons(0);
             p_data.src_mask = 0;
             p_data.dst_mask = 0;
-            p_data.pad2 = 0;
+            p_data.pad2 = htons(0);
 
 
             send(sock, &p_data, sizeof(p_data), 0);
@@ -430,17 +435,33 @@ class exporter {
 
             sock = s;
         }
+
+        void export_all(prog_args p_args, packet p) {
+            for(flow f = flow_list.front();; f = flow_list.front()) {
+                export_flow(p_args, f, p);
+                flow_list.pop_front();
+                if(flow_list.empty()) {
+                    break;
+                }
+            }
+        }
 };
 
-uint32_t timeval_to_sysuptime(timeval t) {
-    return ((uint32_t) t.tv_sec * 1000 + (uint32_t) t.tv_usec / 1000);
+uint32_t calc_sysuptime(timeval t1, timeval t2) {
+    time_t sec = t2.tv_sec - t1.tv_sec;
+    time_t usec = t2.tv_usec - t1.tv_usec;
+    if(usec < 1) {
+        usec += 1000000;
+        sec--;
+    }
+    return ((uint32_t) sec * 1000 + (uint32_t) usec / 1000);
 }
 
 // return the time differance between the two times
-float time_subtract(timeval x, timeval y) {
+double time_subtract(timeval x, timeval y) {
     struct timeval result;
     result.tv_sec = x.tv_sec - y.tv_sec;
-
+    
     if ((result.tv_usec = x.tv_usec - y.tv_usec) < 0) {
         result.tv_usec += 1000000;
         result.tv_sec--;
@@ -469,13 +490,14 @@ int main(int argc, char** argv) {
 
     exporter exp;
 
-    while(1) {
-        packet p;
+    packet p;
+    while(1) {        
         if(p.process_packet(p_args.file)) {
             break;
         }
         exp.process(p_args, p);
     }
+    exp.export_all(p_args, p);
 
     p_args.cleanup();
     return 0;

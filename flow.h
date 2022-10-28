@@ -46,6 +46,8 @@ struct packet_data {
     uint16_t dstport;
     uint8_t pad1;
     uint8_t tcp_flags;
+    uint8_t prot;
+    uint8_t tos;
     uint16_t src_as;
     uint16_t dst_as;
     uint8_t src_mask;
@@ -53,8 +55,8 @@ struct packet_data {
     uint16_t pad2;
 };
 
-uint32_t timeval_to_sysuptime(timeval t);
-float time_subtract(timeval x, timeval y);
+uint32_t calc_sysuptime(timeval t1, timeval t2);
+double time_subtract(timeval x, timeval y);
 bool time_compare(timeval t1, timeval t2);
 
 int main(int argc, char** argv);
