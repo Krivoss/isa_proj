@@ -12,7 +12,7 @@ class prog_args {
         int port;
         float active_t;
         float inactive_t;
-        int flow_cache_size;
+        long unsigned int flow_cache_size;
 
         prog_args() {
             file_name = "-";
@@ -52,7 +52,7 @@ class prog_args {
                         inactive_t = atof(optarg);
                         break;
                     case 'm':
-                        flow_cache_size = atoi(optarg);
+                        flow_cache_size = atol(optarg);
                         break;
                     case 'h':
                         cerr << "usage: ./flow [-f <file>] [-c <netflow_collector>[:<port>]] [-a <active_timer>] [-i <inactive_timer>] [-m <count>]" << endl;
@@ -298,7 +298,7 @@ class exporter {
                 edit_flow(p, matched_pos);
             }
             else {
-                add_flow(p);
+                add_flow(prog_args, p);
             }
 
         }
@@ -350,10 +350,13 @@ class exporter {
             // flow_list.sort([](flow lhs, flow rhs) {return time_compare(lhs.first_t, rhs.first_t);});
         }
 
-        void add_flow(packet p) {
-            // TODO overflow
+        void add_flow(prog_args prog_args, packet p) {
             if(flow_list.size() == 0 && flow_sequence_n == 0) {
                 boot = p.time_s;
+            }
+            if(flow_list.size() == prog_args.flow_cache_size) {
+                flow_list.sort([](flow lhs, flow rhs) {return time_compare(lhs.first_t, rhs.first_t);});
+                export_flow(prog_args, flow_list.front(), p);
             }
             flow f(p);
             flow_list.push_back(f);
