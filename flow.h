@@ -18,9 +18,15 @@
 #include <pcap.h>
 #include <netinet/ether.h>
 #include <netinet/ip.h>
-#include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
+
+#define __FAVOR_BSD
+#include <netdb.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netinet/tcp.h>
 
 
 

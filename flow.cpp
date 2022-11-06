@@ -33,7 +33,6 @@ class prog_args {
                         file_name = optarg;
                         break;
                     case 'c':
-                        // TODO test gethostbyname
                         arg_s.assign(optarg);
                         if(arg_s.find(":") == string::npos) {
                             netflow_collector = gethostbyname(arg_s.c_str());
@@ -147,8 +146,8 @@ class packet {
                     switch (ip_header->protocol) {
                         case IPPROTO_TCP: { // TCP
                             const struct tcphdr* tcp_header {(struct tcphdr*)(packet + sizeof(struct ethhdr) + ip_header_len)};
-                            src_port = ntohs(tcp_header->source);
-                            dst_port = ntohs(tcp_header->dest);                            
+                            src_port = ntohs(tcp_header->th_sport);
+                            dst_port = ntohs(tcp_header->th_dport);                            
                             prot = "TCP";
                             tcp_flag = tcp_header->th_flags;
                             break;
@@ -283,7 +282,7 @@ class exporter {
         list<flow> flow_list;
         int flow_sequence_n;
         int sock;
-        timeval boot;
+        timeval boot; // time of the first (oldest) packet - for sysuptime calculatin
 
         exporter() {
             flow_list = list<flow>();
@@ -303,6 +302,7 @@ class exporter {
 
         }
 
+        // check if any flow time havent exceded their times
         void check_for_export(prog_args p_args, packet p) {
             timeval curr_t = p.time_s;
             list<flow>::iterator i = flow_list.begin();
@@ -311,6 +311,7 @@ class exporter {
                 double active_t = time_subtract(curr_t, f.first_t);
                 double inactive_t = time_subtract(curr_t, f.last_t);
                 if((active_t >= p_args.active_t) || (inactive_t >= p_args.inactive_t)) {
+                    // if flow has and exceded time export it
                     f.curr_t = curr_t;
                     export_flow(p_args, f, p);
                     i = flow_list.erase(i);
@@ -321,6 +322,7 @@ class exporter {
             }
         }
 
+        // search if there are any matching flows to the packet
         int match_flow(packet p) {
             int i = 0;
             for(const auto& f : flow_list) {
@@ -338,6 +340,7 @@ class exporter {
             return -1;
         }
 
+        // if packet matched existing flow, update this flow
         void edit_flow(packet p, int pos) {
             list<flow>::iterator it = flow_list.begin();
             advance(it, pos);
@@ -350,6 +353,7 @@ class exporter {
             // flow_list.sort([](flow lhs, flow rhs) {return time_compare(lhs.first_t, rhs.first_t);});
         }
 
+        // if no flows matched the packet add new flow
         void add_flow(prog_args prog_args, packet p) {
             if(flow_list.size() == 0 && flow_sequence_n == 0) {
                 boot = p.time_s;
@@ -363,6 +367,7 @@ class exporter {
             flow_list.push_back(f);
         }
 
+        // sending flow in udp packet
         void export_flow(prog_args p_args, flow f, packet p) {
             if(sock == 0) {
                 open_client_sock(p_args);
@@ -412,6 +417,7 @@ class exporter {
             
         }
 
+        // open socket for exporting flows
         void open_client_sock(prog_args p_args) {
             // modified code taken from echo-udp-client2.c by Petr Matousek
             // https://moodle.vut.cz/pluginfile.php/502893/mod_folder/content/0/udp/echo-udp-client2.c?forcedownload=1
@@ -451,6 +457,7 @@ class exporter {
         }
 };
 
+// return the systemuptime = new_time - old_time
 uint32_t calc_sysuptime(timeval t1, timeval t2) {
     time_t sec = t2.tv_sec - t1.tv_sec;
     time_t usec = t2.tv_usec - t1.tv_usec;
@@ -496,11 +503,14 @@ int main(int argc, char** argv) {
 
     packet p;
     while(1) {        
+        // read packet from file and put it into packet objecy
         if(p.process_packet(p_args.file)) {
             break;
         }
+        // send packet to exporter
         exp.process(p_args, p);
     }
+    // export all remaining flows
     exp.export_all(p_args, p);
 
     p_args.cleanup();
