@@ -357,6 +357,7 @@ class exporter {
             if(flow_list.size() == prog_args.flow_cache_size) {
                 flow_list.sort([](flow lhs, flow rhs) {return time_compare(lhs.first_t, rhs.first_t);});
                 export_flow(prog_args, flow_list.front(), p);
+                flow_list.pop_front();
             }
             flow f(p);
             flow_list.push_back(f);
