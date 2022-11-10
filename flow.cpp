@@ -46,12 +46,24 @@ class prog_args {
                         break;
                     case 'a':
                         active_t = atof(optarg);
+                        if(active_t <= 0.0) {
+                            cerr << "ERROR: -a must be greater than 0" << endl;
+                            exit(1);
+                        }
                         break;
                     case 'i':
                         inactive_t = atof(optarg);
+                        if(inactive_t <= 0.0) {
+                            cerr << "ERROR: -i must be greater than 0" << endl;
+                            exit(1);
+                        }
                         break;
                     case 'm':
-                        flow_cache_size = atol(optarg);
+                        flow_cache_size = stoul(optarg);
+                        if(atol(optarg) <= 0) {
+                            cerr << "ERROR: -m must be greater than 0" << endl;
+                            exit(1);
+                        }
                         break;
                     case 'h':
                         cerr << "usage: ./flow [-f <file>] [-c <netflow_collector>[:<port>]] [-a <active_timer>] [-i <inactive_timer>] [-m <count>]" << endl;
