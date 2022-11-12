@@ -1,0 +1,35 @@
+.TH FLOW 1
+.SH NAME
+flow \- NetFlow exporter
+.SH SYNOPSIS
+.B flow
+[\fB\-f\fR \fIFILE\fR]
+[\fB\-c\fR \fINETFLOW_COLLECTOR\fR]
+[\fB\-a\fR \fIACTIVE_TIMER\fR]
+[\fB\-n\fR \fIINACTIVE_TIMER\fR]
+[\fB\-m\fR \fICOUNT\fR]
+
+.SH DESCRIPTION
+.B flow
+creates NetFlow records and sends them to a collector
+
+.SH OPTIONS
+.TP
+.BR \-h
+Displays usage information.
+.TP
+.BR \-f " " \fIpath
+path to file for processing. Default is STDIN
+.TP
+.BR \-c " " \fIneflow_collector:port
+IP adress or the hostname of the collector. Default is 127.0.0.1:2055.
+.TP
+.BR \-a " " \fIseconds
+Interval in seconds after which active flows will be exported. Default is 60.
+.TP
+.BR \-n " " \fIseconds
+Iqnterval in seconds after which inactive flows will be exported. Default is 10.
+.TP
+.BR \-n " " \fIcount
+Size of flow-cache. Default is 1024.
+.TH FLOW 1
