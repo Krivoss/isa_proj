@@ -1,20 +1,11 @@
 #include <iostream>
 #include <iomanip>
-#include <sstream>
 #include <list>
-
-#include <ctime>
-#include <cassert>
-
 #include <string.h>
-#include <stdio.h> 
-#include <stdlib.h>
 #include <stdint.h>
 
 #include <getopt.h>
-#include <signal.h>
 #include <err.h>
-#include <time.h>
 #include <pcap.h>
 #include <netinet/ether.h>
 #include <netinet/ip.h>

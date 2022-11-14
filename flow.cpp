@@ -1,7 +1,5 @@
 #include "flow.h"
 
-#define DEBUG_PRINT_PACKETS 0
-
 using namespace std;
 
 class prog_args {
@@ -39,10 +37,10 @@ class prog_args {
                         }
                         else {
                             string host = arg_s.substr(0, arg_s.find(":"));
-                            netflow_collector = gethostbyname(host.c_str());                            
+                            netflow_collector = gethostbyname(host.c_str());
                             string port_s = (arg_s.substr(arg_s.find(":") + 1, arg_s.length()));
                             port = stoi(port_s);
-                        }                        
+                        }
                         break;
                     case 'a':
                         active_t = atof(optarg);
@@ -185,72 +183,7 @@ class packet {
                 }
             }
             time_s = header.ts;
-            if (DEBUG_PRINT_PACKETS) {
-                packet_print();
-            }
             return 0;
-        }
-
-        // converts unprintable chars to dots
-        string get_printable() {
-            string printable = "";
-            for (bpf_u_int32 i = 0; i < header.len; i++){
-                char c = packet[i];
-                if(c < 32 || c >= 126) {
-                    printable += '.';
-                } 
-                else {
-                    printable += c;
-                }
-            }
-            return printable;
-        }
-        
-        // outputs packet respresentation
-        void packet_print() {
-
-            // cout <<  "timestamp: " << time_s << endl;
-            cout << "src MAC: " << src_MAC << endl;
-            cout << "dst MAC: " << dst_MAC << endl;
-            cout << "frame length: " << header.len << " bytes" << endl;
-            if (prot != "IPv6") {
-                cout << "src IP: " << src_ip << endl;
-                cout << "dst IP: " << dst_ip << endl;
-            }
-            if(prot == "TCP" || prot == "UDP") {                
-                cout << "src port: " << src_port << endl;
-                cout << "dst port: " << dst_port << endl << endl;
-            }
-
-            auto printable = get_printable();
-            for (bpf_u_int32 i = 0; i < header.len; i++){
-
-                printf("0x%04x ", i);
-                for (int j = 0; j < 16; j++){
-                    if(i + j > header.len) {
-                        cout << "   ";                        
-                    }
-                    else {
-                        printf("%02x ", packet[i+j]);
-                    }
-                }
-                cout << " ";
-
-                for (int j = 0; j < 16; j++){
-                    if (j == 8) {
-                        cout << " ";
-                    }
-                    if(i+j > header.len) {
-                        break;
-                    }                        
-                    else {
-                        cout<<printable[i+j];
-                    }                        
-                }
-                i += 15;
-                cout << endl;
-            }
-            cout << endl;
         }
 };
 
@@ -291,10 +224,10 @@ class flow {
 
 class exporter {
     public:
-        list<flow> flow_list;
+        list<flow> flow_list; // cache
         int flow_sequence_n;
         int sock;
-        timeval boot; // time of the first (oldest) packet - for sysuptime calculatin
+        timeval boot_time; // time of the first (oldest) packet - for sysuptime calculatin
 
         exporter() {
             flow_list = list<flow>();
@@ -368,7 +301,7 @@ class exporter {
         // if no flows matched the packet add new flow
         void add_flow(prog_args prog_args, packet p) {
             if(flow_list.size() == 0 && flow_sequence_n == 0) {
-                boot = p.time_s;
+                boot_time = p.time_s;
             }
             if(flow_list.size() == prog_args.flow_cache_size) {
                 flow_list.sort([](flow lhs, flow rhs) {return time_compare(lhs.first_t, rhs.first_t);});
@@ -387,7 +320,7 @@ class exporter {
             packet_data p_data = {};
             p_data.version = htons(5);
             p_data.count = htons(1);
-            p_data.SysUptime = htonl(calc_sysuptime(boot, p.time_s));
+            p_data.SysUptime = htonl(calc_sysuptime(boot_time, p.time_s));
             p_data.unix_secs = htonl((uint32_t) p.time_s.tv_sec);
             p_data.unix_nsecs = htonl((uint32_t) p.time_s.tv_usec * 1000);
             p_data.flow_sequence = htonl(flow_sequence_n++);
@@ -402,8 +335,8 @@ class exporter {
             p_data.output = htons(0);
             p_data.dPkts = htonl(f.packet_n);
             p_data.dOctets = htonl(f.dOctets);
-            p_data.First = htonl(calc_sysuptime(boot, f.first_t));
-            p_data.Last = htonl(calc_sysuptime(boot, f.last_t));
+            p_data.First = htonl(calc_sysuptime(boot_time, f.first_t));
+            p_data.Last = htonl(calc_sysuptime(boot_time, f.last_t));
             p_data.srcport = htons(f.src_port);
             p_data.dstport = htons(f.dst_port);
             p_data.pad1 = 0;
